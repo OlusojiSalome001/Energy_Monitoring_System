@@ -1,3 +1,4 @@
+//Include Libraries
 #define TINY_GSM_MODEM_SIM800      // Modem is SIM800
 #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
 #include <PZEM004Tv30.h> //pzem library
@@ -5,7 +6,11 @@
 #include <HTTPClient.h> // library for sending data server
 #include <TinyGsmClient.h> // Library for comunicating with SIM 800L
 // Configure TinyGSM library
+#include <time.h> // Time 
 
+#include <FS.h> // include flash storage 
+#include <SPIFFS.h> // include spiff storage
+ File file;
 
 
 
@@ -48,6 +53,10 @@ TinyGsmClient client(modem);
 HardwareSerial pzemSerial(1); //setting serial1 for pzem, and renaming it as pzemSerial
 PZEM004Tv30 pzem;
 
+//
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 3600000;
+const int   daylightOffset_sec = 0;
 
 
 int  acMains = 14; // pin for switch from mains power source
@@ -63,14 +72,10 @@ float acEnergy=0.0; // setting a default value for the mains energy
 double solarEnergy=0.0; // setting a default value for solar energy
 
 
-
-
-
-
-
 void setup() {
   // put your setup code here, to run once:
- Serial.begin(115200);
+
+// Init and getSerial.begin(115200);
  // Set GSM module baud rate and UART pins
  gsmSerial.begin(9600, SERIAL_8N1, Modem_RX , Modem_TX );
 
@@ -88,6 +93,13 @@ delay(1000);
   digitalWrite(Modem_RST, HIGH);
   digitalWrite(Modem_POWER_ON, HIGH);
 
+  if (SPIFFS.begin())  // initializes flash storage
+{
+    Serial.println("SPIFFS initialized.");
+    File file = SPIFFS.open("/Readings.txt", "a");
+}
+  
+
 modem.init(); // initializes modem
 
 // TinyGSM Client for Internet connection
@@ -103,23 +115,28 @@ TinyGsmClient client(modem);
     Serial.println("GPRS connection failed.");
     while (true);
   }
+ // Init and get the time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 }
-
-
 
 void loop() {
   // put your main code here, to run repeatedly:
-
-  for (unsigned long start = millis(); millis() - start < 1000;)
-  {
-    while (gsmSerial.available())
-    {
+for (unsigned long start = millis(); millis() - start < 1500;)
+  { 
        data();
+    if (energyReadings ){
+      write_to_google_sheet(param); 
     }
+    
     }
   
 }
 void data() {
+    struct tm timeinfo;
+   if (!getLocalTime(&timeinfo)) {
+      Serial.println("Failed to obtain time");
+      return;
+    }
   double solarPowr= 0; // define current as 0 at the beginning of the loop
   double batteryVol= 0 ; // define current as 0 at the beginning of the loop
   double solarVolt =0; // define current as 0 at the beginning of the loop
@@ -140,8 +157,7 @@ if (currentTime-previousTime >=interval)
 
   }
 
-int i;// defining variable i
-
+int i; // defining variable i
 for (i=0; i<=150; i=i+1) // created the for  loop to get average value.
 { 
 int batteryVolt = analogRead(batteryVoltage); // reading the voltage sensor 
@@ -157,9 +173,6 @@ double solarCurrent= map(solarVolt, 0, 4095, 0, 5);// converting analog reading 
 double Curren = (solarCurrent-2.5)/0.066; // converting voltage value  to current 
 double solarPow = solarVol*Curren;
 solarPowr = solarPowr +solarPow; // Getting aggregate power
-
-
-
 delay(2000);
 }
 double Batteryvolt = batteryVolt/150; // getting the average battery voltage values
@@ -188,27 +201,40 @@ float energyOut = pzem.energy(); // reading the output energy using pzem
         Serial.println("Error reading energy");
   
 }
-
-if (!isnan(energyOut)|| solarPower<=50 || acMains == HIGH )
+if (solarPower>=10 || acMains == HIGH){
+  String status = "charging"; 
+}
+else {
+  status = "Not charging"
+}
+unsigned energyReadings = !isnan(energyOut)|| solarPower>=5 || acMains == HIGH;
+if (energyReadings )
   {
-
+    char timeStringBuff[50]; //50 chars should be enough
+    strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+    String asString(timeStringBuff);
+    asString.replace(" ", "-");
+    Serial.print("Time:");
+    Serial.println(asString);
 
     String param;
-    param  = "solar_energy="+String(solarEnergy);
-    param += "&mains_energy="+String(acEnergy);
-    param += "&battery_level="+String(percentage);
-    param += "&energy_consumed="+String(energyOut);
+    param  = "Time:"+String(asString); 
+    param +="&solar_energy:"+String(solarEnergy);
+    param += "&mains_energy:"+String(acEnergy);
+    param += "&battery_level:"+String(percentage);
+    param += "&energy_consumed:"+String(energyOut);
+    param += "&charging_status:"+String(status);
     //Serial.println(param);
-    write_to_google_sheet(param);
+    
   }
   else
   {
-    Serial.println("No any valid Energy data.");
+    Serial.println("Power cube not in use");
   }
 
   
 }
-void write_to_google_sheet(String params) {
+void write_to_google_sheet(params) {
    HTTPClient http;
    String url=" https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+params;
   
@@ -224,11 +250,23 @@ void write_to_google_sheet(String params) {
     //---------------------------------------------------------------------
     //getting response from google sheet
     String payload;
-    if (httpCode > 0) {
+    if (httpCode ==200) {
+      while (file.available()) {
+        char c = file.read();
+        Serial.print(c);
+      file.flush();  
+      }
         payload = http.getString();
-        Serial.println("Payload: "+payload);     
+        Serial.println("Payload: "+payload); }
+    else {
+      if (file) {
+      Serial.println("File opened for writing:");
+      
+      // Write data to the file
+      file.println(param);   
     }
     //---------------------------------------------------------------------
-    http.end();
+  http.end();
 
+}
 }
