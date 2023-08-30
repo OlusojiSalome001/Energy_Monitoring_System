@@ -1,89 +1,93 @@
-//Include Libraries
-#define TINY_GSM_MODEM_SIM800      // Modem is SIM800
-#define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
-#include <PZEM004Tv30.h> //pzem library
-#include <HardwareSerial.h> // communicating with hardware serial
-#include <HTTPClient.h> // library for sending data server
-#include <TinyGsmClient.h> // Library for comunicating with SIM 800L
-// Configure TinyGSM library
-#include <time.h> // Time 
 
-#include <FS.h> // include flash storage 
-#include <SPIFFS.h> // include spiff storage
+//Include Libraries
+ #define TINY_GSM_MODEM_SIM800      // Modem is SIM800
+ #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
+ #include <PZEM004Tv30.h> //pzem library
+ #include <HardwareSerial.h> // communicating with hardware serial
+ #include <HTTPClient.h> // library for sending data server
+  
+ #include <TinyGsmClient.h> // Library for comunicating with SIM 800L
+ // Configure TinyGSM library
+ #include <time.h> // Time 
+
+ #include <FS.h> // include flash storage 
+ #include <SPIFFS.h> // include spiff storage
  File file;
 
 
 
-String GOOGLE_SCRIPT_ID = "AKfycbwc5yRfYYGhUo074myV_bKWDnWWe2nNQsA6dUk8H_cezDG4vRrFrgUiJtV6Ee3z0UwY";
+ String GOOGLE_SCRIPT_ID = "AKfycbwc5yRfYYGhUo074myV_bKWDnWWe2nNQsA6dUk8H_cezDG4vRrFrgUiJtV6Ee3z0UwY";
 
 
-// TTGO T-Call pins
-#define Modem_RST            5
-#define Modem_PWKEY          4
-#define Modem_POWER_ON       23
-#define Modem_TX             27
-#define Modem_RX             26
+ // TTGO T-Call pins
+ #define Modem_RST            5
+ #define Modem_PWKEY          4
+ #define Modem_POWER_ON       23
+ #define Modem_TX             27
+ #define Modem_RX             26
 
-//  GPRS credentials (leave empty, if not needed)
-const char* apn     = " "; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
-const char* gprsUser = " "; // GPRS User
-const char* gprsPass = " "; // GPRS Password
-
-
-
-// Defining TTGO TCall Serial with Serial 2
-HardwareSerial gsmSerial(2);
+ //  GPRS credentials (leave empty, if not needed)
+ const char* apn     = " "; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
+ const char* gprsUser = " "; // GPRS User
+ const char* gprsPass = " "; // GPRS Password
 
 
 
-#ifdef DUMP_AT_COMMANDS // checks if the DUMP_AT_COMMANDS macro has been defined
-  #include <StreamDebugger.h> // This library helps  monitor the communication between your program and the GSM module by logging AT commands and responses.
-  StreamDebugger debugger(gsmSerial, Serial); //If the DUMP_AT_COMMANDS macro is defined, this line creates a StreamDebugger object named debugger. It takes two parameters: gsmSerial is typically the serial port connected to your GSM module, Serial is used for monitoring/debugging.
-  TinyGsm modem(debugger); // This line initializes the TinyGsm object named modem
-#else
-  TinyGsm modem(gsmSerial); // initializes the TinyGsm object using just the Serial connection without debugging
-#endif
-
-// TinyGSM Client for Internet connection
-TinyGsmClient client(modem);
-
-//PZEM004Tv30 pins
-#define RXD2 16 // RX pin for PZEM
-#define TXD2 17 // TX pin for PZEM
-HardwareSerial pzemSerial(1); //setting serial1 for pzem, and renaming it as pzemSerial
-PZEM004Tv30 pzem;
-
-//
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600000;
-const int   daylightOffset_sec = 0;
+ // Defining TTGO TCall Serial with Serial 2
+ HardwareSerial gsmSerial(2);
 
 
-int  acMains = 14; // pin for switch from mains power source
-int solarVoltage = 2; // pin for voltage sensor used for measuring Solar Voltage 
-int current= 15; // pin for current sensor used for measuring Solar current
-int batteryVoltage = 32; // pin for voltage sensor used for measuring battery Voltage 
-int percentage; // defining the percentage value of the battery
-// float previousEnergy = 0; 
 
-unsigned long previousTime = 0; // definining previous time for millis
-unsigned long interval=180000; // defining interval as 3 Minutes
-float acEnergy=0.0; // setting a default value for the mains energy
-double solarEnergy=0.0; // setting a default value for solar energy
+  #ifdef DUMP_AT_COMMANDS // checks if the DUMP_AT_COMMANDS macro has been defined
+    #include <StreamDebugger.h> // This library helps  monitor the communication between your program and the GSM module by logging AT commands and responses.
+    StreamDebugger debugger(gsmSerial, Serial); //If the DUMP_AT_COMMANDS macro is defined, this line creates a StreamDebugger object named debugger. It takes two parameters: gsmSerial is typically the serial port connected to your GSM module, Serial is used for monitoring/debugging.
+    TinyGsm modem(debugger); // This line initializes the TinyGsm object named modem
+  #else
+    TinyGsm modem(gsmSerial); // initializes the TinyGsm object using just the Serial connection without debugging
+  #endif
+
+  // TinyGSM Client for Internet connection
+  TinyGsmClient client(modem);
+
+  //PZEM004Tv30 pins
+  #define RXD2 16 // RX pin for PZEM
+  #define TXD2 17 // TX pin for PZEM
+  HardwareSerial pzemSerial(1); //setting serial1 for pzem, and renaming it as pzemSerial
+  PZEM004Tv30 pzem;
+
+  //
+  const char* ntpServer = "pool.ntp.org";
+  const long  gmtOffset_sec = 3600000;
+  const int   daylightOffset_sec = 0;
+
+  String param;
+
+  int ldr = 33; // pin for ldr values
+  int  acMains = 14; // pin for switch from mains power source
+  int solarVoltage = 2; // pin for voltage sensor used for measuring Solar Voltage 
+  int current= 15; // pin for current sensor used for measuring Solar current
+  int batteryVoltage = 32; // pin for voltage sensor used for measuring battery Voltage 
+  int percentage; // defining the percentage value of the battery
+  float previousEnergy = 0; 
+
+  unsigned long previousTime = 0; // defining previous time for millis
+  unsigned long solarPreviousTime = 0; // defining solar previous time for millis
+  unsigned long interval=180000; // defining interval as 3 Minutes
+  float acEnergy=0.0; // setting a default value for the mains energy
+  double solarEnergy=0.0; // setting a default value for solar energy
 
 
 void setup() {
   // put your setup code here, to run once:
 
-// Init and getSerial.begin(115200);
- // Set GSM module baud rate and UART pins
- gsmSerial.begin(9600, SERIAL_8N1, Modem_RX , Modem_TX );
+  // Init and getSerial.begin(115200);
+  // Set GSM module baud rate and UART pins
+  gsmSerial.begin(9600, SERIAL_8N1, Modem_RX , Modem_TX );
 
-// Set pzem baud rate and UART pins
-pzemSerial.begin (9600, SERIAL_8N1, RXD2 , TXD2 );
-
-pzem.setAddress(0x01); // Set the PZEM-004T address if needed
-delay(1000);
+  // Set pzem baud rate and UART pins
+  pzemSerial.begin (9600, SERIAL_8N1, RXD2 , TXD2 );
+  pzem.setAddress(0x01); // Set the PZEM-004T address if needed
+  delay(1000);
 
   // Set modem reset, enable, power pins
   pinMode(Modem_PWKEY, OUTPUT);
@@ -94,16 +98,16 @@ delay(1000);
   digitalWrite(Modem_POWER_ON, HIGH);
 
   if (SPIFFS.begin())  // initializes flash storage
-{
-    Serial.println("SPIFFS initialized.");
+  {
+     Serial.println("SPIFFS initialized.");
     File file = SPIFFS.open("/Readings.txt", "a");
-}
+  }
   
 
-modem.init(); // initializes modem
+  modem.init(); // initializes modem
 
-// TinyGSM Client for Internet connection
-TinyGsmClient client(modem);
+   // TinyGSM Client for Internet connection
+  TinyGsmClient client(modem);
 
 
   if (!modem.init()) {
@@ -117,82 +121,100 @@ TinyGsmClient client(modem);
   }
  // Init and get the time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-}
+  }
 
 void loop() {
   // put your main code here, to run repeatedly:
-for (unsigned long start = millis(); millis() - start < 1500;)
-  { 
-       data();
-    if (energyReadings ){
+  for (unsigned long start = millis(); millis() - start < 5997;)
+    { 
+       //data();
+    if (data()){
       write_to_google_sheet(param); 
-    }
-    
-    }
+     }
   
-}
-void data() {
-    struct tm timeinfo;
-   if (!getLocalTime(&timeinfo)) {
-      Serial.println("Failed to obtain time");
-      return;
     }
-  double solarPowr= 0; // define current as 0 at the beginning of the loop
-  double batteryVol= 0 ; // define current as 0 at the beginning of the loop
-  double solarVolt =0; // define current as 0 at the beginning of the loop
-  int batteryVolt= 0; // define current as 0 at the beginning of the loop
-unsigned long currentTime = millis(); // code for calculating ac mains supply
-if (currentTime-previousTime >=interval) 
+   }
+bool data() {
+  bool energyReadingG2g = false;
+  String lDr;
+  String status; 
+    struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+      Serial.println("Failed to obtain time");
+      //return;
+    }
+   double solarPowr= 0; // define current as 0 at the beginning of the loop
+   double batteryVol= 0 ; // define current as 0 at the beginning of the loop
+   double solarVolt =0; // define current as 0 at the beginning of the loop
+   int batteryVolt= 0; // define current as 0 at the beginning of the loop....................................................................................................................................................................
+   int LDR= analogRead(ldr);
+  if (LDR>= 500)
   {
-    if (acMains == HIGH) {
-   double mainsEnergy= 65*(currentTime-previousTime)/3600000000 ; // multiply 65W power by duration between current time and the previous time
-   double acEnergy= acEnergy+ mainsEnergy;
+    lDr = "Tamper";
+
+  }
+  else {
+    lDr = "No Tamper";
+
+  }
+  Serial.print("PowerCube Status:");
+      Serial.print(lDr);
+  // code for calculating ac mains energy supply
+  unsigned long currentTime = millis(); // checking the time 
+    if (currentTime-previousTime >=1000) 
+    {
+    if (acMains == HIGH) 
+    {
+    double mainsEnergy= 65*(currentTime-previousTime)/3600000000 ; // multiply 65W power by duration between current time and the previous time
+    double acEnergy= acEnergy+ mainsEnergy;
     }
     else
     { acEnergy= acEnergy;}
+
     previousTime= currentTime; // set the previous time as current time
     Serial.print("Ac supply Energy: "); 
     Serial.print(acEnergy,3); 
     Serial.print (" kWh");
+    }
+  
+  unsigned long solarCurrentTime = millis(); // Solar Current Time 
 
-  }
+   for (int i=0; i<=150; i=i+1) {// created the for  loop to get average value. 
+    int batteryVolt = analogRead(batteryVoltage); // reading the voltage sensor 
+    double batteryVolta= map(batteryVolt, 0, 4095, 0, 25 ); // mapping the analog readings to battery voltage value
+    batteryVol= batteryVol+ batteryVolta;
 
-int i; // defining variable i
-for (i=0; i<=150; i=i+1) // created the for  loop to get average value.
-{ 
-int batteryVolt = analogRead(batteryVoltage); // reading the voltage sensor 
-double batteryVolta= map(batteryVolt, 0, 4095, 0, 25 ); // mapping the analog readings to battery voltage value
-batteryVol= batteryVol+ batteryVolta;
+    int solarVo= analogRead(solarVoltage); // reading the voltage sensor
+    double solarVol= map(solarVo, 0, 4095, 0, 25 ); // mapping the analog readings to solar voltage value
 
+    int solarCurren=analogRead(current); // reading the current sensor
+    double solarCurrent= map(solarVolt, 0, 4095, 0, 5);// converting analog reading to a voltage value
+    double Curren = (solarCurrent-2.5)/0.066; // converting voltage value  to current 
+    double solarPow = solarVol*Curren;
+    solarPowr = solarPowr +solarPow; // Getting aggregate power
+    delay(100);
+    }
 
-int solarVo= analogRead(solarVoltage); // reading the voltage sensor
-double solarVol= map(solarVo, 0, 4095, 0, 25 ); // mapping the analog readings to solar voltage value
+   double Batteryvolt = batteryVolt/150; // getting the average battery voltage values
 
-int solarCurren=analogRead(current); // reading the current sensor
-double solarCurrent= map(solarVolt, 0, 4095, 0, 5);// converting analog reading to a voltage value
-double Curren = (solarCurrent-2.5)/0.066; // converting voltage value  to current 
-double solarPow = solarVol*Curren;
-solarPowr = solarPowr +solarPow; // Getting aggregate power
-delay(2000);
-}
-double Batteryvolt = batteryVolt/150; // getting the average battery voltage values
+   percentage =  map(Batteryvolt, 10.8, 12.6, 0, 100);// converting battery voltage to percentage
 
-percentage =  map(Batteryvolt, 10.8, 12.6, 0, 100);// converting battery voltage to percentage
-
-  Serial.print("Battery Percentage: "); 
-   Serial.print(percentage); 
+    Serial.print("Battery Percentage: "); 
+    Serial.print(percentage); 
     Serial.print ("%");
 
-double solarPower =  solarPowr/150; // averaging out power
-double solEnergy= solarPower * 3/60000; // multiplying  solar power by 3 minutes delay and converting to kwh
-  solarEnergy = solarEnergy + solEnergy;
-Serial.print("Solar Energy: "); 
-   Serial.print(solarEnergy,3); 
+   double solarPower =  solarPowr/150; // averaging out power
+   double solEnergy= solarPower * (solarCurrentTime-solarPreviousTime)/3600000; // multiplying  solar power by delay and converting to kwh
+   solarEnergy = solarEnergy + solEnergy;
+    Serial.print("Solar Energy: "); 
+    Serial.print(solarEnergy,3); 
     Serial.print (" kWh");
+   solarPreviousTime = solarCurrentTime;
 
-float energyOut = pzem.energy(); // reading the output energy using pzem
+  float energyOut = pzem.energy(); // reading the output energy using pzem
 
-    if(!isnan(energyOut) ){
+    if(!isnan(energyOut) ) // 
+    {
         Serial.print("Energy: "); 
         Serial.print(energyOut,3); 
         Serial.println("kWh");
@@ -200,16 +222,16 @@ float energyOut = pzem.energy(); // reading the output energy using pzem
     else {
         Serial.println("Error reading energy");
   
-}
-if (solarPower>=10 || acMains == HIGH){
-  String status = "charging"; 
-}
-else {
-  status = "Not charging"
-}
-unsigned energyReadings = !isnan(energyOut)|| solarPower>=5 || acMains == HIGH;
-if (energyReadings )
-  {
+    }
+   if (solarPower>=10 || acMains == HIGH){
+    status = "charging"; 
+   }
+   else {
+    status = "Not charging";
+   }
+   unsigned energyReadings = !isnan(energyOut)|| solarPower>=5 || acMains == HIGH;
+   if (energyReadings )
+    {
     char timeStringBuff[50]; //50 chars should be enough
     strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S", &timeinfo);
     String asString(timeStringBuff);
@@ -217,24 +239,26 @@ if (energyReadings )
     Serial.print("Time:");
     Serial.println(asString);
 
-    String param;
+    //String param;
     param  = "Time:"+String(asString); 
     param +="&solar_energy:"+String(solarEnergy);
     param += "&mains_energy:"+String(acEnergy);
     param += "&battery_level:"+String(percentage);
     param += "&energy_consumed:"+String(energyOut);
     param += "&charging_status:"+String(status);
+    param += "&powercube_status:"+String(lDr);
     //Serial.println(param);
-    
-  }
-  else
-  {
-    Serial.println("Power cube not in use");
-  }
+   // write_to_google_sheet(param);
+    energyReadingG2g = true;
+   }
+   else
+   {
+    Serial.println("No any valid Energy data.");
+   }
+   return energyReadingG2g;
+   }
 
-  
-}
-void write_to_google_sheet(params) {
+void write_to_google_sheet(String params) {
    HTTPClient http;
    String url=" https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+params;
   
@@ -263,10 +287,9 @@ void write_to_google_sheet(params) {
       Serial.println("File opened for writing:");
       
       // Write data to the file
-      file.println(param);   
+      file.println(params);   
     }
     //---------------------------------------------------------------------
   http.end();
-
-}
-}
+ }
+ }
