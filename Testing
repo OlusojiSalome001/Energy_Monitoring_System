@@ -1,0 +1,149 @@
+//Include Libraries
+ #define TINY_GSM_MODEM_SIM800      // Modem is SIM800
+ #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
+ //#include <PZEM004Tv30.h> //pzem library
+ #include <HardwareSerial.h> // communicating with hardware serial
+ #include <HTTPClient.h> // library for sending data server
+  
+ #include <TinyGsmClient.h> // Library for comunicating with SIM 800L
+ // Configure TinyGSM library
+ #include <time.h> // Time 
+
+/*#include <FS.h> // include flash storage 
+ #include <SPIFFS.h> // include spiff storage
+ File file;*/
+
+
+
+ String GOOGLE_SCRIPT_ID = "AKfycbxYq-FcBpolq-Ele4qR1MQrSiYfjoHwnYrkU-LGAp3QS35g17OK9InbGW1zypMev7_k";
+
+
+ // TTGO T-Call pins
+ #define Modem_RST            5
+ #define Modem_PWKEY          4
+ #define Modem_POWER_ON       23
+ #define Modem_TX             27
+ #define Modem_RX             26
+
+ //  GPRS credentials (leave empty, if not needed)
+ const char* apn     = "internet.ng.airtel.com"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
+ const char* gprsUser = " "; // GPRS User
+ const char* gprsPass = " "; // GPRS Password
+
+
+
+ // Defining TTGO TCall Serial with Serial 2
+ HardwareSerial gsmSerial(2);
+
+
+
+  #ifdef DUMP_AT_COMMANDS // checks if the DUMP_AT_COMMANDS macro has been defined
+    #include <StreamDebugger.h> // This library helps  monitor the communication between your program and the GSM module by logging AT commands and responses.
+    StreamDebugger debugger(gsmSerial, Serial); //If the DUMP_AT_COMMANDS macro is defined, this line creates a StreamDebugger object named debugger. It takes two parameters: gsmSerial is typically the serial port connected to your GSM module, Serial is used for monitoring/debugging.
+    TinyGsm modem(debugger); // This line initializes the TinyGsm object named modem
+  #else
+    TinyGsm modem(gsmSerial); // initializes the TinyGsm object using just the Serial connection without debugging
+  #endif
+
+  // TinyGSM Client for Internet connection
+  TinyGsmClient client(modem);
+
+
+ 
+
+  //
+  const char* ntpServer = "pool.ntp.org";
+  const long  gmtOffset_sec = 3600000;
+  const int   daylightOffset_sec = 0;
+
+  String param;
+
+
+void setup() {
+  // put your setup code here, to run once:
+
+  // Init and getSerial.begin(115200);
+  Serial.begin(115200);
+
+  // Set GSM module baud rate and UART pins
+  gsmSerial.begin(9600, SERIAL_8N1, Modem_RX , Modem_TX );
+
+  
+  // Set modem reset, enable, power pins
+  pinMode(Modem_PWKEY, OUTPUT);
+  pinMode(Modem_RST, OUTPUT);
+  pinMode(Modem_POWER_ON, OUTPUT);
+  digitalWrite(Modem_PWKEY, LOW);
+  digitalWrite(Modem_RST, HIGH);
+  digitalWrite(Modem_POWER_ON, HIGH);
+
+  /*if (SPIFFS.begin())  // initializes flash storage
+  {
+     Serial.println("SPIFFS initialized.");
+    File file = SPIFFS.open("/Readings.txt", "a");
+  }*/
+  
+
+  modem.init(); // initializes modem
+
+   // TinyGSM Client for Internet connection
+  TinyGsmClient client(modem);
+
+
+  if (!modem.init()) {
+    Serial.println("Modem initialization failed.");
+    while (true);
+  }
+
+  if (modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    Serial.println("GPRS connection failed.");
+    while (true);
+  }
+ // Init and get the time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  }
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+      Serial.println("Failed to obtain time");
+      //return;
+    }
+    char timeStringBuff[50]; //50 chars should be enough
+    strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+    String asString(timeStringBuff);
+    asString.replace(" ", "-");
+    Serial.print("Time:");
+    Serial.println(asString);
+
+    //String param;
+    param  = "Time:"+String(asString); //Test values
+    param +="&solar_energy: No any valid Energy data.";
+    
+   HTTPClient http;
+   String url=" https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+param;
+  
+   //Serial.print(url);
+    Serial.println("Posting Energy Consumption data to Google Sheet");
+    //---------------------------------------------------------------------
+    //starts posting data to google sheet
+    http.begin(url.c_str());
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    int httpCode = http.GET();  
+    Serial.print("HTTP Status Code: ");
+    Serial.println(httpCode);
+    //---------------------------------------------------------------------
+    //getting response from google sheet
+    if (httpCode == 200)
+        {String payload;
+        payload = http.getString();
+        Serial.println("Payload: "+payload); }
+    else {
+  
+    //---------------------------------------------------------------------
+    http.end();
+        }
+  delay(1000);
+ }
+ 
