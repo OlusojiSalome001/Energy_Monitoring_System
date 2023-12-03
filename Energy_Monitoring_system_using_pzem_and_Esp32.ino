@@ -1,12 +1,13 @@
 
 //Include Libraries
+ #include <TinyGsmClient.h> // Library for comunicating with SIM 800L
  #define TINY_GSM_MODEM_SIM800      // Modem is SIM800
  #define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
  #include <PZEM004Tv30.h> //pzem library
  #include <HardwareSerial.h> // communicating with hardware serial
  #include <HTTPClient.h> // library for sending data server
   
- #include <TinyGsmClient.h> // Library for comunicating with SIM 800L
+ 
  // Configure TinyGSM library
  #include <time.h> // Time 
 
@@ -16,7 +17,7 @@
 
 
 
- String GOOGLE_SCRIPT_ID = "AKfycbwc5yRfYYGhUo074myV_bKWDnWWe2nNQsA6dUk8H_cezDG4vRrFrgUiJtV6Ee3z0UwY";
+ String GOOGLE_SCRIPT_ID = "AKfycbxYq-FcBpolq-Ele4qR1MQrSiYfjoHwnYrkU-LGAp3QS35g17OK9InbGW1zypMev7_k";
 
 
  // TTGO T-Call pins
@@ -62,7 +63,9 @@
 
   String param;
 
-  int ldr = 33; // pin for ldr values
+ int trigger= 36;
+int echo = 39;
+int travelTime;
   int  acMains = 14; // pin for switch from mains power source
   int solarVoltage = 2; // pin for voltage sensor used for measuring Solar Voltage 
   int current= 15; // pin for current sensor used for measuring Solar current
@@ -116,7 +119,7 @@ void setup() {
   }
 
   if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
-    Serial.println("GPRS connection failed.");
+    Serial.println("GPRS connection failed.");    
     while (true);
   }
  // Init and get the time
@@ -130,13 +133,14 @@ void loop() {
        //data();
     if (data()){
       write_to_google_sheet(param); 
+      delay(1000);
      }
   
     }
    }
 bool data() {
   bool energyReadingG2g = false;
-  String lDr;
+
   String status; 
     struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
@@ -146,19 +150,7 @@ bool data() {
    double solarPowr= 0; // define current as 0 at the beginning of the loop
    double batteryVol= 0 ; // define current as 0 at the beginning of the loop
    double solarVolt =0; // define current as 0 at the beginning of the loop
-   int batteryVolt= 0; // define current as 0 at the beginning of the loop....................................................................................................................................................................
-   int LDR= analogRead(ldr);
-  if (LDR>= 500)
-  {
-    lDr = "Tamper";
-
-  }
-  else {
-    lDr = "No Tamper";
-
-  }
-  Serial.print("PowerCube Status:");
-      Serial.print(lDr);
+   int batteryVolt= 0; // define current as 0 at the beginning of the loop....................................................................................................................................................................  
   // code for calculating ac mains energy supply
   unsigned long currentTime = millis(); // checking the time 
     if (currentTime-previousTime >=1000) 
@@ -178,7 +170,7 @@ bool data() {
     }
   
   unsigned long solarCurrentTime = millis(); // Solar Current Time 
-
+    int bucket =0;
    for (int i=0; i<=150; i=i+1) {// created the for  loop to get average value. 
     int batteryVolt = analogRead(batteryVoltage); // reading the voltage sensor 
     double batteryVolta= map(batteryVolt, 0, 4095, 0, 25 ); // mapping the analog readings to battery voltage value
@@ -192,7 +184,17 @@ bool data() {
     double Curren = (solarCurrent-2.5)/0.066; // converting voltage value  to current 
     double solarPow = solarVol*Curren;
     solarPowr = solarPowr +solarPow; // Getting aggregate power
+
+    digitalWrite ( trigger, LOW);
+    delayMicroseconds(10);
+    digitalWrite ( trigger, HIGH);
+    delayMicroseconds(10);
+    digitalWrite ( trigger, LOW);
+    travelTime= pulseIn(echo, HIGH);
+    travelDistance = travelTime/2 * (34.4/1000);
+    bucket = bucket+travelDistance;
     delay(100);
+
     }
 
    double Batteryvolt = batteryVolt/150; // getting the average battery voltage values
@@ -211,8 +213,18 @@ bool data() {
     Serial.print (" kWh");
    solarPreviousTime = solarCurrentTime;
 
+    Average = bucket/150;
+   
+  if (travelDistance>= 8)
+  {
+    travelDistance = "Tamper";
+  }
+  else {
+   travelDistance = "No Tamper";
+  }
+  Serial.print("PowerCube Status:");
+      Serial.print(travelDistance);
   float energyOut = pzem.energy(); // reading the output energy using pzem
-
     if(!isnan(energyOut) ) // 
     {
         Serial.print("Energy: "); 
@@ -221,7 +233,6 @@ bool data() {
     } 
     else {
         Serial.println("Error reading energy");
-  
     }
    if (solarPower>=10 || acMains == HIGH){
     status = "charging"; 
@@ -246,13 +257,19 @@ bool data() {
     param += "&battery_level:"+String(percentage);
     param += "&energy_consumed:"+String(energyOut);
     param += "&charging_status:"+String(status);
-    param += "&powercube_status:"+String(lDr);
-    //Serial.println(param);
-   // write_to_google_sheet(param);
+    param += "&powercube_status:"+String(travelDistance);
+
     energyReadingG2g = true;
    }
    else
-   {
+   {  char timeStringBuff[50]; //50 chars should be enough
+    strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+    String asString(timeStringBuff);
+    asString.replace(" ", "-");
+    Serial.print("Time:");
+    Serial.println(asString);
+      param  = "Time:"+String(asString); 
+    param +="&solar_energy: No any valid Energy data.";
     Serial.println("No any valid Energy data.");
    }
    return energyReadingG2g;
@@ -264,32 +281,24 @@ void write_to_google_sheet(String params) {
   
    //Serial.print(url);
     Serial.println("Posting Energy Consumption data to Google Sheet");
-    //---------------------------------------------------------------------
     //starts posting data to google sheet
     http.begin(url.c_str());
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    int httpCode = http.GET();  
-    Serial.print("HTTP Status Code: ");
+    int httpCode = http.GET();   //getting response from google sheet
+    Serial.print("HTTP Status Code: "); 
     Serial.println(httpCode);
-    //---------------------------------------------------------------------
-    //getting response from google sheet
     String payload;
     if (httpCode ==200) {
       while (file.available()) {
         char c = file.read();
         Serial.print(c);
-      file.flush();  
-      }
+      file.flush(); }
         payload = http.getString();
         Serial.println("Payload: "+payload); }
     else {
       if (file) {
       Serial.println("File opened for writing:");
-      
       // Write data to the file
       file.println(params);   
     }
-    //---------------------------------------------------------------------
-  http.end();
- }
- }
+  
